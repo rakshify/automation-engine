@@ -7,6 +7,7 @@ import logging
 from .context import WorkflowContext
 from .factory import ComponentFactory, ActionFactory, EventFactory
 from .datastore import datastore
+from .logging_filter import set_logging_context, clear_logging_context
 
 
 class Workflow:
@@ -21,6 +22,9 @@ class Workflow:
         # Parse workflow structure
         self.name = workflow_data.get('name', 'Unnamed Workflow')
         self.components = workflow_data.get('components', {})
+        
+        # Set logging context
+        set_logging_context(user_id=user_id, workflow_name=self.name)
         
         # Debug logging
         self.logger.info(f"Initializing workflow: {self.name}")
@@ -106,16 +110,16 @@ class Workflow:
     
     def _execute_component(self, component_id: str, component_config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single component."""
+        # Update logging context with current context keys
+        set_logging_context(context_keys=list(self.context.get_all().keys()))
+        
         self.logger.info(f"Executing component: {component_id}")
         
         try:
             # Create component instance
-            self.logger.info(f"🔧 Creating component instance for {component_id}")
             component = self._create_component_instance(component_id, component_config)
-            self.logger.info(f"✅ Component instance created: {type(component)}")
             
             # Resolve configuration with context (lock-free for reactive workflows)
-            self.logger.info(f"🔧 Resolving config for {component_id}")
             try:
                 config = component_config.get('config', {})
                 resolved_config = {}
@@ -137,10 +141,9 @@ class Workflow:
                         resolved_config[key] = value
                         
             except Exception as e:
-                self.logger.error(f"❌ Config resolution failed for {component_id}: {str(e)}")
+                self.logger.error(f"Config resolution failed for {component_id}: {str(e)}")
                 return {'success': False, 'error': f'Config resolution failed: {str(e)}'}
                 
-            self.logger.info(f"✅ Config resolved: {resolved_config}")
             
             # Determine if this is an action or event
             action_type = component_config.get('action_type')
@@ -149,13 +152,8 @@ class Workflow:
             
             if action_type:
                 # Create and execute action
-                self.logger.info(f"🔧 Creating action: {action_type}")
                 action = ActionFactory.create(action_type, component, resolved_config)
-                self.logger.info(f"✅ Action created: {type(action)}")
-                
-                self.logger.info(f"🚀 Executing action...")
                 result = action.execute(self.context)
-                self.logger.info(f"✅ Action execution completed")
                 
             elif event_type:
                 # Create and execute event
@@ -275,7 +273,7 @@ class Workflow:
             # Set up callback for reactive execution BEFORE creating the event
             def create_callback(trigger_id, trigger_config, action_components):
                 def workflow_callback(message_data):
-                    self.logger.info(f"🔥 Trigger {trigger_id} fired! Executing action components...")
+                    self.logger.info(f"Trigger {trigger_id} fired! Executing action components...")
                     
                     # Update context with trigger data
                     output_mapping = trigger_config.get('output_mapping', {})
@@ -287,19 +285,15 @@ class Workflow:
                     for component_id in action_components:
                         component_config = self.components[component_id]
                         try:
-                            self.logger.info(f"🔧 Executing action component: {component_id}")
-                            self.logger.info(f"📋 Component config: {component_config}")
                             result = self._execute_component(component_id, component_config)
                             success = result.get('success', False)
-                            self.logger.info(f"✅ Action component {component_id} executed: {success}")
-                            self.logger.info(f"📊 Result: {result}")
                             if not success:
-                                self.logger.error(f"❌ Action component {component_id} failed: {result.get('error', 'Unknown error')}")
+                                self.logger.error(f"Action component {component_id} failed: {result.get('error', 'Unknown error')}")
                         except Exception as e:
-                            self.logger.error(f"❌ Action component {component_id} failed with exception: {str(e)}")
+                            self.logger.error(f"Action component {component_id} failed with exception: {str(e)}")
                             import traceback
-                            self.logger.error(f"📋 Traceback: {traceback.format_exc()}")
-                    self.logger.info(f"🎯 Workflow cycle completed for trigger {trigger_id}")
+                            self.logger.error(f"Traceback: {traceback.format_exc()}")
+                    self.logger.info(f"Workflow cycle completed for trigger {trigger_id}")
                 
                 return workflow_callback
             
@@ -316,10 +310,9 @@ class Workflow:
             # Set the callback on the event
             if hasattr(event, 'set_workflow_callback'):
                 event.set_workflow_callback(callback)
-                self.logger.info(f"✅ Callback set for trigger {trigger_id}")
+                self.logger.info(f"Callback set for trigger {trigger_id}")
             
             # Execute the event to start listening
-            self.logger.info(f"🚀 Starting persistent listener for {trigger_id}")
             result = event.execute(self.context)
             
             if not result.get('success', False):
@@ -330,7 +323,7 @@ class Workflow:
                 }
         
         # Return success - the workflow is now reactive
-        self.logger.info("🎉 Reactive workflow started successfully! Listeners are active and will execute actions on events.")
+        self.logger.info("Reactive workflow started successfully! Listeners are active and will execute actions on events.")
         return {
             'success': True,
             'message': 'Reactive workflow started. Event listeners are active and will execute actions on each trigger.',

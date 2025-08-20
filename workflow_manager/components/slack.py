@@ -182,16 +182,16 @@ class ReceiveMessageEvent(BaseEvent):
                 
                 # Execute workflow callback for reactive workflow
                 if self.workflow_callback:
-                    self.logger.info(f"🔥 Executing workflow callback for reactive execution...")
+                    self.logger.info(f"Executing workflow callback for reactive execution...")
                     try:
                         self.workflow_callback(message_data)
-                        self.logger.info(f"✅ Workflow callback executed successfully")
+                        self.logger.info(f"Workflow callback executed successfully")
                     except Exception as e:
-                        self.logger.error(f"❌ Error in workflow callback: {str(e)}")
+                        self.logger.error(f"Error in workflow callback: {str(e)}")
                         import traceback
                         self.logger.error(traceback.format_exc())
                 else:
-                    self.logger.warning(f"⚠️  No workflow callback set - message queued only")
+                    self.logger.warning(f"No workflow callback set - message queued only")
     
     def _start_listening(self) -> None:
         """Start listening for Slack messages in a separate thread."""

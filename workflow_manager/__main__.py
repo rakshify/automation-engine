@@ -3,6 +3,8 @@
 import sys
 import argparse
 import logging
+import logging.config
+import json
 from pathlib import Path
 
 # Add the project root to the Python path
@@ -14,21 +16,46 @@ from workflow_manager.cli.create_workflow import create_workflow
 from workflow_manager.cli.execute_workflow import execute_workflow, interactive_execute_workflow, get_user_choice, show_workflow_details
 from workflow_manager.cli.auth import get_current_user
 from workflow_manager.core.datastore import datastore
+from workflow_manager.core.logging_filter import set_logging_context, setup_context_filter
+
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 
 def setup_logging():
-    """Setup logging configuration."""
+    """Setup logging configuration from centralized config file."""
+    # Ensure logs directory exists
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_dir / "workflow_manager.log"),
-            logging.StreamHandler()
-        ]
-    )
+    # Load logging configuration from JSON file
+    config_path = Path("configs/logging_config.json")
+    
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        
+        # Configure logging using dictConfig
+        logging.config.dictConfig(config)
+        
+        # Setup context filter
+        setup_context_filter()
+        
+    except FileNotFoundError:
+        # Fallback to basic configuration if config file not found
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_dir / "workflow_manager.log"),
+                logging.StreamHandler()
+            ]
+        )
+        logger.warning("Logging config file not found, using basic configuration")
+    except Exception as e:
+        # Fallback to basic configuration on any error
+        logging.basicConfig(level=logging.INFO)
+        logger.error(f"Failed to load logging configuration: {e}")
 
 
 def show_main_menu():
@@ -37,11 +64,11 @@ def show_main_menu():
         print_header("Workflow Manager")
         
         user = get_current_user()
-        print(f"Welcome, {user.username}!")
+        # Set user context for logging
+        set_logging_context(user_id=user.user_id)
         
         # Show user's workflow count
         workflow_count = len(datastore.list_workflows(user.user_id))
-        print(f"You have {workflow_count} workflow(s)")
         
         # Main menu options
         options = [
@@ -64,7 +91,6 @@ def show_main_menu():
                 list_workflows()
             elif choice == 3:  # Exit
                 if ask_yes_no("Are you sure you want to exit?", True):
-                    print("Goodbye!")
                     break
             
             # Pause before showing menu again
@@ -72,10 +98,9 @@ def show_main_menu():
                 input("\nPress Enter to continue...")
                 
         except KeyboardInterrupt:
-            print("\n\nGoodbye!")
             break
         except Exception as e:
-            print(f"An error occurred: {e}")
+            logger.error(f"Error in main menu: {e}")
             input("Press Enter to continue...")
 
 
@@ -87,12 +112,10 @@ def list_workflows():
     workflows = datastore.list_workflows(user.user_id)
     
     if not workflows:
-        print("No workflows found. Create your first workflow!")
         return
     
-    print(f"Found {len(workflows)} workflow(s):")
     for i, workflow_name in enumerate(workflows, 1):
-        print(f"  {i}. {workflow_name}")
+        pass
     
     # Ask if user wants to see details of any workflow
     if ask_yes_no("\nView details of a specific workflow?", False):
@@ -111,8 +134,7 @@ def handle_command_line_execution(menu_option: str, workflow_name: str = None):
             available_workflows = datastore.list_workflows(user.user_id)
             
             if workflow_name not in available_workflows:
-                print(f"Error: Workflow '{workflow_name}' not found.")
-                print(f"Available workflows: {', '.join(available_workflows)}")
+                logger.error(f"Workflow '{workflow_name}' not found")
                 sys.exit(1)
             
             execute_workflow(workflow_name)
@@ -129,8 +151,7 @@ def handle_command_line_execution(menu_option: str, workflow_name: str = None):
         list_workflows()
     
     else:
-        print(f"Error: Unknown menu option '{menu_option}'")
-        print("Valid options: create, execute, list")
+        logger.error(f"Unknown menu option: {menu_option}")
         sys.exit(1)
 
 
@@ -167,8 +188,9 @@ Examples:
 def main():
     """Main application entry point."""
     try:
-        # Setup logging
+        # Setup logging first
         setup_logging()
+        logger.info("Workflow Manager starting")
         
         # Change to the project directory to ensure relative paths work
         project_dir = Path(__file__).parent.parent
@@ -186,7 +208,7 @@ def main():
             show_main_menu()
         
     except Exception as e:
-        print(f"Fatal error: {e}")
+        logger.critical(f"Fatal error: {e}", exc_info=True)
         sys.exit(1)
 
 

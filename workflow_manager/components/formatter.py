@@ -49,7 +49,6 @@ class TextAction(BaseAction):
             raise ValueError(f"Unknown text operation: {operation}")
 
         self.logger.info(f"Formatted text '{input_text}' to '{result}' using operation '{operation}'")
-        print(f"🔧 Formatter: '{input_text}' → '{result}' (operation: {operation})", flush=True)  # Force immediate output
         return {
             'formatted_text': result,
             'success': True

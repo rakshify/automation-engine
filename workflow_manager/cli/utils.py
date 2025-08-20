@@ -1,7 +1,11 @@
 """Shared utility functions for the CLI."""
 
 import re
+import logging
 from typing import List, Dict, Any, Optional
+
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 
 def ask_question(question: str, default: str = None) -> str:
@@ -15,22 +19,16 @@ def ask_question(question: str, default: str = None) -> str:
     return response if response else (default or "")
 
 
-def ask_yes_no(question: str, default: bool = None) -> bool:
-    """Ask a yes/no question."""
-    if default is True:
-        prompt = f"{question} [Y/n]: "
-    elif default is False:
-        prompt = f"{question} [y/N]: "
-    else:
-        prompt = f"{question} [y/n]: "
+def ask_yes_no(question: str, default: bool = True) -> bool:
+    """Ask a yes/no question and return boolean result."""
+    default_str = "Y/n" if default else "y/N"
     
     while True:
-        response = input(prompt).strip().lower()
+        response = input(f"{question} [{default_str}]: ").strip().lower()
         
-        if not response and default is not None:
+        if not response:
             return default
-        
-        if response in ['y', 'yes']:
+        elif response in ['y', 'yes']:
             return True
         elif response in ['n', 'no']:
             return False
@@ -48,11 +46,11 @@ def display_choices(title: str, choices: List[str], numbered: bool = True) -> No
             print(f"  - {choice}")
 
 
-def get_choice(choices: List[str], prompt: str = "Enter your choice") -> int:
-    """Get a choice from a numbered list."""
+def get_choice(choices: List[str], prompt: str = "Select an option") -> int:
+    """Get user's choice from a list of options."""
     while True:
         try:
-            choice = int(input(f"{prompt} (1-{len(choices)}): "))
+            choice = int(input(f"\n{prompt} (1-{len(choices)}): "))
             if 1 <= choice <= len(choices):
                 return choice - 1  # Return 0-based index
             else:
@@ -62,34 +60,35 @@ def get_choice(choices: List[str], prompt: str = "Enter your choice") -> int:
 
 
 def validate_workflow_name(name: str) -> bool:
-    """Validate workflow name (alphanumeric, underscores, hyphens only)."""
+    """Validate workflow name format."""
     if not name:
-        return False
-    
-    # Check if name contains only allowed characters
-    if not re.match(r'^[a-zA-Z0-9_-]+$', name):
         return False
     
     # Check length
     if len(name) < 1 or len(name) > 50:
         return False
     
+    # Check characters (letters, numbers, underscores, hyphens)
+    if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+        return False
+    
     return True
 
 
-def get_valid_workflow_name(existing_names: List[str] = None) -> str:
-    """Get a valid and unique workflow name from user."""
-    existing_names = existing_names or []
-    
+def get_valid_workflow_name(existing_names: List[str]) -> str:
+    """Get a valid workflow name from user input."""
     while True:
         name = ask_question("Enter workflow name")
+        
+        if not name:
+            continue
         
         if not validate_workflow_name(name):
             print("Invalid workflow name. Use only letters, numbers, underscores, and hyphens (1-50 characters)")
             continue
         
         if name in existing_names:
-            if ask_yes_no(f"Workflow '{name}' already exists. Do you want to overwrite it?", False):
+            if ask_yes_no(f"Workflow '{name}' already exists. Overwrite?", False):
                 return name
             else:
                 continue
@@ -97,19 +96,19 @@ def get_valid_workflow_name(existing_names: List[str] = None) -> str:
         return name
 
 
-def format_dict(data: Dict[str, Any], indent: int = 0) -> str:
+def format_dict(data: Dict[Any, Any], indent: int = 0) -> str:
     """Format a dictionary for display."""
     lines = []
-    prefix = "  " * indent
+    indent_str = "  " * indent
     
     for key, value in data.items():
         if isinstance(value, dict):
-            lines.append(f"{prefix}{key}:")
+            lines.append(f"{indent_str}{key}:")
             lines.append(format_dict(value, indent + 1))
         elif isinstance(value, list):
-            lines.append(f"{prefix}{key}: {', '.join(map(str, value))}")
+            lines.append(f"{indent_str}{key}: {value}")
         else:
-            lines.append(f"{prefix}{key}: {value}")
+            lines.append(f"{indent_str}{key}: {value}")
     
     return "\n".join(lines)
 
