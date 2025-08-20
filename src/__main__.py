@@ -11,12 +11,12 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from workflow_manager.cli.utils import display_choices, get_choice, print_header, ask_yes_no
-from workflow_manager.cli.create_workflow import create_workflow
-from workflow_manager.cli.execute_workflow import execute_workflow, interactive_execute_workflow, get_user_choice, show_workflow_details
-from workflow_manager.cli.auth import get_current_user
-from workflow_manager.core.datastore import datastore
-from workflow_manager.core.logging_filter import set_logging_context, setup_context_filter
+from src.cli.utils import display_choices, get_choice, print_header, ask_yes_no
+from src.cli.create_workflow import create_workflow
+from src.cli.execute_workflow import execute_workflow, interactive_execute_workflow, get_user_choice, show_workflow_details
+from src.cli.auth import get_current_user
+from src.core.datastore import datastore
+from src.core.logging_filter import set_logging_context, setup_context_filter
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ def setup_logging():
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             handlers=[
-                logging.FileHandler(log_dir / "workflow_manager.log"),
+                logging.FileHandler(log_dir / "src.log"),
                 logging.StreamHandler()
             ]
         )
@@ -162,11 +162,11 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m workflow_manager                           # Interactive mode
-  python -m workflow_manager execute                   # Choose workflow to execute
-  python -m workflow_manager execute my_workflow       # Execute specific workflow
-  python -m workflow_manager create                    # Create new workflow
-  python -m workflow_manager list                      # List all workflows
+  python -m src                           # Interactive mode
+  python -m src execute                   # Choose workflow to execute
+  python -m src execute my_workflow       # Execute specific workflow
+  python -m src create                    # Create new workflow
+  python -m src list                      # List all workflows
         """
     )
     

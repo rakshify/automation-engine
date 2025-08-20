@@ -30,7 +30,7 @@
             "class": "logging.handlers.RotatingFileHandler",
             "level": "DEBUG",
             "formatter": "detailed",
-            "filename": "logs/workflow_manager.log",
+            "filename": "logs/src.log",
             "maxBytes": 10485760,
             "backupCount": 5,
             "encoding": "utf8"
@@ -55,7 +55,7 @@
         }
     },
     "loggers": {
-        "workflow_manager": {
+        "src": {
             "level": "DEBUG",
             "handlers": ["console", "file", "error_file", "debug_file"],
             "propagate": false

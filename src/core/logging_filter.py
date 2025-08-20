@@ -67,8 +67,8 @@ def clear_logging_context():
 
 
 def setup_context_filter():
-    """Setup the context filter on all workflow_manager handlers."""
-    logger = logging.getLogger('workflow_manager')
+    """Setup the context filter on all src handlers."""
+    logger = logging.getLogger('src')
     
     # Add filter to the logger itself so it applies to all handlers
     logger.addFilter(context_filter)

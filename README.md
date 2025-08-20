@@ -29,18 +29,18 @@ A flexible workflow automation system that allows you to create and execute work
 python run.py
 
 # Method 2: Using the module
-python -m workflow_manager
+python -m src
 
 # Method 3: Direct execution
-cd workflow_manager
+cd src
 python __main__.py
 
 # Command-line usage
-python -m workflow_manager create                    # Create new workflow
-python -m workflow_manager execute                   # Choose workflow to execute
-python -m workflow_manager execute my_workflow       # Execute specific workflow
-python -m workflow_manager list                      # List all workflows
-python -m workflow_manager --help                    # Show help
+python -m src create                    # Create new workflow
+python -m src execute                   # Choose workflow to execute
+python -m src execute my_workflow       # Execute specific workflow
+python -m src list                      # List all workflows
+python -m src --help                    # Show help
 ```
 
 ### Available Components
@@ -189,7 +189,7 @@ workflow-manager/
 │   ├── action_store.json      # Action definitions
 │   ├── components_store.json  # Component definitions
 │   └── event_store.json       # Event definitions
-├── workflow_manager/           # Main application package
+├── src/                        # Main application package
 │   ├── cli/                   # Command-line interface
 │   ├── components/            # Component implementations
 │   ├── core/                  # Core logic and abstractions
