@@ -1,0 +1,29 @@
+{
+  "slack.receive_message": {
+    "component": "slack",
+    "name": "Receive Slack Message",
+    "doc": "Trigger workflow when a message is received in Slack",
+    "config": {
+      "channel": {
+        "key": "channel",
+        "name": "Channel",
+        "doc": "Slack channel to monitor (optional, uses default from setup)",
+        "type": "text",
+        "optional": true
+      },
+      "keyword": {
+        "key": "keyword",
+        "name": "Keyword",
+        "doc": "Keyword to trigger on (optional, triggers on all messages if not specified)",
+        "type": "text",
+        "optional": true
+      }
+    },
+    "output_schema": {
+      "message_text": "string",
+      "user_id": "string",
+      "channel": "string",
+      "timestamp": "string"
+    }
+  }
+}

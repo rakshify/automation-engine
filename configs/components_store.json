@@ -1,0 +1,29 @@
+{
+  "slack": {
+    "name": "Slack",
+    "doc": "Component for Slack integration - sending messages and receiving events",
+    "type": "third_party",
+    "setup": {
+      "bot_token": {
+        "key": "bot_token",
+        "name": "Bot Token",
+        "doc": "Slack Bot User OAuth Token (starts with xoxb-)"
+      },
+      "channel": {
+        "key": "channel",
+        "name": "Default Channel",
+        "doc": "Default Slack channel ID or name"
+      }
+    }
+  },
+  "formatter": {
+    "name": "Formatter",
+    "doc": "Component for text and number formatting operations",
+    "type": "built_in"
+  },
+  "webhook": {
+    "name": "Webhook",
+    "doc": "Component for making HTTP requests to external APIs",
+    "type": "built_in"
+  }
+}

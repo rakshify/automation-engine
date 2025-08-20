@@ -1,0 +1,177 @@
+{
+  "formatter.text": {
+    "component": "formatter",
+    "name": "Text Formatter",
+    "doc": "Perform text formatting operations like URL encoding, replacement, and prefix stripping",
+    "config": {
+      "operation": {
+        "key": "operation",
+        "name": "Operation",
+        "doc": "Type of text operation to perform",
+        "type": "choice",
+        "choices": ["urlencode", "replace", "strip_prefix"]
+      },
+      "input": {
+        "key": "input",
+        "name": "Input Text",
+        "doc": "Text to format (can use context placeholders like {{key}})",
+        "type": "text"
+      }
+    },
+    "conditional_config": {
+      "replace": {
+        "old_value": {
+          "key": "old_value",
+          "name": "Old Value",
+          "doc": "Text to replace",
+          "type": "text"
+        },
+        "new_value": {
+          "key": "new_value",
+          "name": "New Value",
+          "doc": "Replacement text",
+          "type": "text"
+        }
+      },
+      "strip_prefix": {
+        "prefix": {
+          "key": "prefix",
+          "name": "Prefix",
+          "doc": "Prefix to remove from the beginning of text",
+          "type": "text"
+        }
+      }
+    },
+    "output_schema": {
+      "formatted_text": "string"
+    }
+  },
+  "formatter.number": {
+    "component": "formatter",
+    "name": "Number Formatter",
+    "doc": "Perform number formatting operations like currency formatting and random number generation",
+    "config": {
+      "operation": {
+        "key": "operation",
+        "name": "Operation",
+        "doc": "Type of number operation to perform",
+        "type": "choice",
+        "choices": ["format_currency", "random_number"]
+      }
+    },
+    "conditional_config": {
+      "format_currency": {
+        "amount": {
+          "key": "amount",
+          "name": "Amount",
+          "doc": "Number to format as currency (can use context placeholders)",
+          "type": "text"
+        },
+        "currency": {
+          "key": "currency",
+          "name": "Currency",
+          "doc": "Currency code (e.g., USD, EUR)",
+          "type": "text"
+        }
+      },
+      "random_number": {
+        "min_value": {
+          "key": "min_value",
+          "name": "Minimum Value",
+          "doc": "Minimum value for random number",
+          "type": "number"
+        },
+        "max_value": {
+          "key": "max_value",
+          "name": "Maximum Value",
+          "doc": "Maximum value for random number",
+          "type": "number"
+        }
+      }
+    },
+    "output_schema": {
+      "formatted_number": "string"
+    }
+  },
+  "webhook.get": {
+    "component": "webhook",
+    "name": "HTTP GET Request",
+    "doc": "Make an HTTP GET request to a specified URL",
+    "config": {
+      "url": {
+        "key": "url",
+        "name": "URL",
+        "doc": "Target URL for the GET request (can use context placeholders)",
+        "type": "text"
+      },
+      "headers": {
+        "key": "headers",
+        "name": "Headers",
+        "doc": "HTTP headers as JSON object (optional)",
+        "type": "text",
+        "optional": true
+      }
+    },
+    "output_schema": {
+      "status_code": "number",
+      "response_body": "string",
+      "headers": "object"
+    }
+  },
+  "webhook.post": {
+    "component": "webhook",
+    "name": "HTTP POST Request",
+    "doc": "Make an HTTP POST request to a specified URL",
+    "config": {
+      "url": {
+        "key": "url",
+        "name": "URL",
+        "doc": "Target URL for the POST request (can use context placeholders)",
+        "type": "text"
+      },
+      "data": {
+        "key": "data",
+        "name": "Request Body",
+        "doc": "Data to send in the request body (can use context placeholders)",
+        "type": "text"
+      },
+      "headers": {
+        "key": "headers",
+        "name": "Headers",
+        "doc": "HTTP headers as JSON object (optional)",
+        "type": "text",
+        "optional": true
+      }
+    },
+    "output_schema": {
+      "status_code": "number",
+      "response_body": "string",
+      "headers": "object"
+    }
+  },
+  "slack.send_message": {
+    "component": "slack",
+    "name": "Send Slack Message",
+    "doc": "Send a message to a Slack channel",
+    "config": {
+      "message": {
+        "key": "message",
+        "name": "Message",
+        "doc": "Message text to send (can use context placeholders)",
+        "type": "text"
+      },
+      "channel": {
+        "key": "channel",
+        "name": "Channel",
+        "doc": "Slack channel ID or name (optional, uses default from setup)",
+        "type": "text",
+        "optional": true
+      }
+    },
+    "output_schema": {
+      "message_ts": "string",
+      "channel": "string",
+      "success": "boolean"
+    }
+  }
+}
