@@ -114,9 +114,32 @@ class Workflow:
             component = self._create_component_instance(component_id, component_config)
             self.logger.info(f"✅ Component instance created: {type(component)}")
             
-            # Resolve configuration with context
+            # Resolve configuration with context (lock-free for reactive workflows)
             self.logger.info(f"🔧 Resolving config for {component_id}")
-            resolved_config = self.context.resolve_config(component_config.get('config', {}))
+            try:
+                config = component_config.get('config', {})
+                resolved_config = {}
+                
+                # Manual resolution to avoid threading lock issues
+                for key, value in config.items():
+                    if isinstance(value, str) and '{{' in value and '}}' in value:
+                        # Extract placeholder
+                        import re
+                        placeholders = re.findall(r'\{\{([^}]+)\}\}', value)
+                        resolved_value = value
+                        for placeholder in placeholders:
+                            # Get value directly without lock
+                            context_value = self.context._data.get(placeholder)
+                            if context_value is not None:
+                                resolved_value = resolved_value.replace(f'{{{{{placeholder}}}}}', str(context_value))
+                        resolved_config[key] = resolved_value
+                    else:
+                        resolved_config[key] = value
+                        
+            except Exception as e:
+                self.logger.error(f"❌ Config resolution failed for {component_id}: {str(e)}")
+                return {'success': False, 'error': f'Config resolution failed: {str(e)}'}
+                
             self.logger.info(f"✅ Config resolved: {resolved_config}")
             
             # Determine if this is an action or event
@@ -131,37 +154,7 @@ class Workflow:
                 self.logger.info(f"✅ Action created: {type(action)}")
                 
                 self.logger.info(f"🚀 Executing action...")
-                
-                # Add timeout to prevent hanging in reactive callbacks
-                import signal
-                import threading
-                
-                result = None
-                exception = None
-                
-                def execute_with_timeout():
-                    nonlocal result, exception
-                    try:
-                        result = action.execute(self.context)
-                    except Exception as e:
-                        exception = e
-                
-                # Execute in thread with timeout
-                thread = threading.Thread(target=execute_with_timeout)
-                thread.daemon = True
-                thread.start()
-                thread.join(timeout=5)  # 5 second timeout
-                
-                if thread.is_alive():
-                    self.logger.error(f"⏰ Action execution timed out for {component_id}")
-                    return {'success': False, 'error': 'Action execution timed out'}
-                
-                if exception:
-                    raise exception
-                
-                if result is None:
-                    return {'success': False, 'error': 'Action execution returned None'}
-                
+                result = action.execute(self.context)
                 self.logger.info(f"✅ Action execution completed")
                 
             elif event_type:

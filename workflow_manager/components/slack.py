@@ -52,11 +52,18 @@ class Slack(BaseComponent):
         if not self.app_token:
             raise ValueError("Slack app token is required for Socket Mode")
         
-        # Initialize Slack clients
+        # Initialize Slack clients with optimized settings for minimal latency
         self.web_client = WebClient(token=self.bot_token)
         self.socket_client = SocketModeClient(
             app_token=self.app_token,
-            web_client=self.web_client
+            web_client=self.web_client,
+            # Optimize for minimal latency
+            ping_interval=1,  # Reduce ping interval for faster connection health checks
+            receive_buffer_size=4096,  # Increase buffer size to reduce batching delays
+            concurrency=20,  # Increase concurrency for faster parallel processing
+            trace_enabled=False,  # Disable tracing for better performance
+            all_message_trace_enabled=False,  # Disable message tracing
+            ping_pong_trace_enabled=False,  # Disable ping/pong tracing
         )
         
         # Test the connection
