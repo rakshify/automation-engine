@@ -9,6 +9,8 @@ A flexible workflow automation system that allows you to create and execute work
 - **Context Management**: Thread-safe data sharing between workflow components
 - **Third-party Integrations**: Support for Slack, webhooks, and more
 - **Interactive CLI**: User-friendly command-line interface
+- **Event-Driven Architecture**: Persistent event listeners for real-time triggers
+- **Multi-Account Support**: Multiple named configurations for third-party services
 
 ## Installation
 
@@ -32,6 +34,13 @@ python -m workflow_manager
 # Method 3: Direct execution
 cd workflow_manager
 python __main__.py
+
+# Command-line usage
+python -m workflow_manager create                    # Create new workflow
+python -m workflow_manager execute                   # Choose workflow to execute
+python -m workflow_manager execute my_workflow       # Execute specific workflow
+python -m workflow_manager list                      # List all workflows
+python -m workflow_manager --help                    # Show help
 ```
 
 ### Available Components
@@ -44,20 +53,24 @@ python __main__.py
    - GET requests with custom headers
    - POST requests with JSON or text data
 
-3. **Slack**: Slack integration (requires setup)
+3. **Slack**: Real-time Slack integration
    - Send messages to channels
-   - Receive message events (mock implementation)
+   - Receive message events with persistent listeners
+   - Socket Mode for real-time communication
 
 ### Creating Workflows
 
 1. Select "Create new workflow" from the main menu
-2. Enter a unique workflow name
-3. Add components one by one:
+2. Enter a unique workflow name (or choose to overwrite existing)
+3. **Add Event Trigger** (required first component):
+   - Choose from available event triggers
+   - Configure event settings and filters
+4. **Add Action Components** (optional):
    - Choose component type
    - Configure component settings
    - Set up third-party integrations if needed
-   - Define output keys for data sharing
-4. The system automatically handles dependencies between components
+   - Define custom output key aliases for data sharing
+5. The system automatically handles dependencies between components
 
 ### Executing Workflows
 
@@ -66,6 +79,107 @@ python __main__.py
 3. Review workflow details
 4. Confirm execution
 5. View results and context data
+
+## Slack Integration
+
+### Setup Requirements
+
+To use Slack integration, you need to create a Slack app with the following:
+
+1. **Create a Slack App**:
+   - Go to [https://api.slack.com/apps](https://api.slack.com/apps)
+   - Create a new app "From scratch"
+   - Select your workspace
+
+2. **Configure Bot Scopes** (OAuth & Permissions):
+   - `chat:write` - Send messages
+   - `channels:read` - Read public channel info
+   - `groups:read` - Read private channel info
+   - `im:read` - Read direct message info
+   - `mpim:read` - Read group direct message info
+
+3. **Install App to Workspace**:
+   - Install the app to your workspace
+   - Copy the "Bot User OAuth Token" (starts with `xoxb-`)
+
+4. **Enable Socket Mode**:
+   - Enable Socket Mode in app settings
+   - Generate an App-Level Token with `connections:write` scope
+   - Copy the "App-Level Token" (starts with `xapp-`)
+
+5. **Subscribe to Events**:
+   - Enable Event Subscriptions
+   - Subscribe to bot events: `message.channels`, `message.groups`, `message.im`, `message.mpim`
+
+6. **Get Signing Secret**:
+   - Copy the Signing Secret from Basic Information
+
+### Slack Component Configuration
+
+When setting up the Slack component, you'll need:
+- **Bot Token** (`xoxb-...`): For API calls and authentication
+- **App Token** (`xapp-...`): For Socket Mode real-time connection
+- **Signing Secret**: For request verification
+
+### Slack Actions and Events
+
+#### Send Message Action
+```
+Component: Slack
+Action: Send Slack Message
+Configuration:
+- Message: "Hello from Workflow Manager!" (supports context placeholders)
+- Channel: "#general" or "C1234567890"
+```
+
+#### Receive Message Event (Persistent Listener)
+```
+Component: Slack
+Event: Receive Slack Message
+Configuration:
+- Channel: "#general" or "C1234567890"
+- Keyword: "deploy" (optional - triggers on all messages if not specified)
+- Timeout: -1 (default - persistent listening, or specify seconds for timeout)
+```
+
+### Event-Driven Architecture
+
+The Slack Receive Message Event is designed as a **persistent listener**:
+
+- **Default Behavior**: Runs continuously (`timeout = -1`)
+- **Background Operation**: Runs in daemon thread, non-blocking
+- **Real-time**: Uses WebSocket connection for instant message reception
+- **Filtering**: Supports channel and keyword filtering
+- **Persistent**: Continues listening after triggering workflow
+
+### Example Workflows
+
+#### Echo Bot (Persistent)
+```
+1. Event Trigger: Slack Receive Message
+   - Channel: "#bot-test"
+   - Timeout: -1 (persistent)
+
+2. Action: Slack Send Message
+   - Channel: "#bot-test"
+   - Message: "Echo: {{message_text}}"
+```
+
+#### Deployment Trigger
+```
+1. Event Trigger: Slack Receive Message
+   - Channel: "#deployments"
+   - Keyword: "deploy"
+   - Timeout: -1 (persistent)
+
+2. Action: Webhook POST
+   - URL: "https://api.example.com/deploy"
+   - Data: {"user": "{{user_id}}", "message": "{{message_text}}"}
+
+3. Action: Slack Send Message
+   - Channel: "#deployments"
+   - Message: "Deployment started by <@{{user_id}}>"
+```
 
 ## Project Structure
 
@@ -91,7 +205,7 @@ workflow-manager/
 The application stores data in the `data/` directory:
 - `users/`: User profiles
 - `workflows/`: Workflow definitions
-- `setups/`: Third-party component configurations
+- `setups/`: Third-party component configurations (supports multiple named setups)
 
 ## Configuration
 
@@ -100,24 +214,26 @@ Component and action definitions are stored in JSON files in the `configs/` dire
 - Available actions and their configuration parameters
 - Available events and their output schemas
 
-## Examples
+## Advanced Features
 
-### Simple Text Formatting Workflow
-1. Add a Formatter component with text operation
-2. Configure it to URL-encode user input
-3. Execute to see the encoded result
+### Multiple Named Setups
+- Create multiple configurations for the same third-party service
+- Example: Different Slack workspaces or accounts
+- Choose or create setups during workflow creation
 
-### Webhook Integration Workflow
-1. Add a Webhook component with GET operation
-2. Configure it to fetch data from an API
-3. Add a Formatter component to process the response
-4. Use context placeholders to pass data between components
+### Custom Output Aliases
+- Rename output variables from actions/events
+- Avoid naming conflicts between components
+- Improve workflow readability
 
-### Slack Notification Workflow
-1. Set up Slack component with bot token
-2. Add a Slack send message action
-3. Configure message content (can use context data)
-4. Execute to send message to Slack
+### Workflow Overwriting
+- Choose to overwrite existing workflows
+- No need to create new names for iterations
+
+### Context Placeholders
+- Use `{{variable_name}}` in configurations
+- Reference outputs from previous components
+- Dynamic content based on workflow execution
 
 ## Development
 
@@ -138,3 +254,46 @@ The application includes comprehensive error handling:
 - Graceful handling of network errors
 - Detailed error messages and logging
 - Safe execution with rollback capabilities
+- Persistent listener cleanup and resource management
+
+## Testing
+
+Test the Slack integration:
+```bash
+python test_slack_persistent.py
+```
+
+This will verify:
+- Slack SDK availability
+- Component creation
+- Event configuration
+- Error handling
+- Timeout configurations
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Slack SDK not available**:
+   - Ensure dependencies are installed: `pip install -r requirements.txt`
+
+2. **Slack authentication failed**:
+   - Verify Bot Token starts with `xoxb-`
+   - Ensure app is installed to workspace
+
+3. **Socket Mode connection issues**:
+   - Verify App Token starts with `xapp-`
+   - Ensure Socket Mode is enabled in Slack app
+
+4. **Persistent listener not working**:
+   - Check timeout is set to -1 (default)
+   - Verify bot is added to target channel
+   - Check application logs for connection errors
+
+### Security Notes
+
+- Keep tokens secure and never commit to version control
+- Use environment variables or secure configuration management
+- Regularly rotate tokens
+- Only grant necessary scopes to your bot
+- Monitor bot activity in Slack audit logs

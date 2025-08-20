@@ -9,10 +9,15 @@
         "name": "Bot Token",
         "doc": "Slack Bot User OAuth Token (starts with xoxb-)"
       },
-      "channel": {
-        "key": "channel",
-        "name": "Default Channel",
-        "doc": "Default Slack channel ID or name"
+      "signing_secret": {
+        "key": "signing_secret",
+        "name": "Signing Secret",
+        "doc": "Slack App Signing Secret for request verification"
+      },
+      "app_token": {
+        "key": "app_token",
+        "name": "App Token",
+        "doc": "Slack App-Level Token (starts with xapp-)"
       }
     }
   },

@@ -163,9 +163,8 @@
       "channel": {
         "key": "channel",
         "name": "Channel",
-        "doc": "Slack channel ID or name (optional, uses default from setup)",
-        "type": "text",
-        "optional": true
+        "doc": "Slack channel ID or name (e.g., #general, C1234567890)",
+        "type": "text"
       }
     },
     "output_schema": {

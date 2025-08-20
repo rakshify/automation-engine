@@ -89,8 +89,10 @@ def get_valid_workflow_name(existing_names: List[str] = None) -> str:
             continue
         
         if name in existing_names:
-            print(f"Workflow '{name}' already exists. Please choose a different name.")
-            continue
+            if ask_yes_no(f"Workflow '{name}' already exists. Do you want to overwrite it?", False):
+                return name
+            else:
+                continue
         
         return name
 

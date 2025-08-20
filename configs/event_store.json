@@ -2,14 +2,13 @@
   "slack.receive_message": {
     "component": "slack",
     "name": "Receive Slack Message",
-    "doc": "Trigger workflow when a message is received in Slack",
+    "doc": "Trigger workflow when a message is received in Slack (persistent listener by default)",
     "config": {
       "channel": {
         "key": "channel",
         "name": "Channel",
-        "doc": "Slack channel to monitor (optional, uses default from setup)",
-        "type": "text",
-        "optional": true
+        "doc": "Slack channel to monitor (e.g., #general, C1234567890)",
+        "type": "text"
       },
       "keyword": {
         "key": "keyword",
@@ -17,13 +16,21 @@
         "doc": "Keyword to trigger on (optional, triggers on all messages if not specified)",
         "type": "text",
         "optional": true
+      },
+      "timeout": {
+        "key": "timeout",
+        "name": "Timeout (seconds)",
+        "doc": "How long to wait for a message (-1 for persistent listening, default: -1)",
+        "type": "number",
+        "optional": true
       }
     },
     "output_schema": {
       "message_text": "string",
       "user_id": "string",
       "channel": "string",
-      "timestamp": "string"
+      "timestamp": "string",
+      "success": "boolean"
     }
   }
 }

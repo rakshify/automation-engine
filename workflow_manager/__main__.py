@@ -1,6 +1,7 @@
 """Main entry point for the Workflow Manager application."""
 
 import sys
+import argparse
 import logging
 from pathlib import Path
 
@@ -10,7 +11,7 @@ sys.path.insert(0, str(project_root))
 
 from workflow_manager.cli.utils import display_choices, get_choice, print_header, ask_yes_no
 from workflow_manager.cli.create_workflow import create_workflow
-from workflow_manager.cli.execute_workflow import execute_workflow, show_workflow_details
+from workflow_manager.cli.execute_workflow import execute_workflow, interactive_execute_workflow, get_user_choice, show_workflow_details
 from workflow_manager.cli.auth import get_current_user
 from workflow_manager.core.datastore import datastore
 
@@ -58,7 +59,7 @@ def show_main_menu():
             if choice == 0:  # Create workflow
                 create_workflow()
             elif choice == 1:  # Execute workflow
-                execute_workflow()
+                interactive_execute_workflow()
             elif choice == 2:  # List workflows
                 list_workflows()
             elif choice == 3:  # Exit
@@ -101,6 +102,68 @@ def list_workflows():
         show_workflow_details(selected_workflow, user.user_id)
 
 
+def handle_command_line_execution(menu_option: str, workflow_name: str = None):
+    """Handle command-line execution based on provided arguments."""
+    if menu_option.lower() in ['execute', 'exec', '2']:
+        if workflow_name:
+            # Direct execution with provided workflow name
+            user = get_current_user()
+            available_workflows = datastore.list_workflows(user.user_id)
+            
+            if workflow_name not in available_workflows:
+                print(f"Error: Workflow '{workflow_name}' not found.")
+                print(f"Available workflows: {', '.join(available_workflows)}")
+                sys.exit(1)
+            
+            execute_workflow(workflow_name)
+        else:
+            # Get user choice first, then execute
+            workflow_name = get_user_choice()
+            if workflow_name:
+                execute_workflow(workflow_name)
+    
+    elif menu_option.lower() in ['create', '1']:
+        create_workflow()
+    
+    elif menu_option.lower() in ['list', '3']:
+        list_workflows()
+    
+    else:
+        print(f"Error: Unknown menu option '{menu_option}'")
+        print("Valid options: create, execute, list")
+        sys.exit(1)
+
+
+def parse_arguments():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Workflow Manager - Create and execute automated workflows",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python -m workflow_manager                           # Interactive mode
+  python -m workflow_manager execute                   # Choose workflow to execute
+  python -m workflow_manager execute my_workflow       # Execute specific workflow
+  python -m workflow_manager create                    # Create new workflow
+  python -m workflow_manager list                      # List all workflows
+        """
+    )
+    
+    parser.add_argument(
+        'menu_option',
+        nargs='?',
+        help='Menu option: create, execute, or list'
+    )
+    
+    parser.add_argument(
+        'workflow_name',
+        nargs='?',
+        help='Workflow name (required when menu_option is execute)'
+    )
+    
+    return parser.parse_args()
+
+
 def main():
     """Main application entry point."""
     try:
@@ -112,8 +175,15 @@ def main():
         import os
         os.chdir(project_dir)
         
-        # Show main menu
-        show_main_menu()
+        # Parse command-line arguments
+        args = parse_arguments()
+        
+        if args.menu_option:
+            # Command-line mode
+            handle_command_line_execution(args.menu_option, args.workflow_name)
+        else:
+            # Interactive mode
+            show_main_menu()
         
     except Exception as e:
         print(f"Fatal error: {e}")

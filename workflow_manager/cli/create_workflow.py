@@ -9,7 +9,7 @@ from .utils import (
     get_valid_workflow_name, print_header, print_separator
 )
 from ..core.datastore import datastore
-from ..core.factory import ComponentFactory, ActionFactory
+from ..core.factory import ComponentFactory, ActionFactory, EventFactory
 
 
 def create_workflow() -> None:
@@ -38,11 +38,37 @@ def create_workflow() -> None:
     print_separator()
     print("Now let's add components to your workflow...")
     
-    component_counter = 1
+    # First, add the required event trigger
+    print("\n--- Adding Event Trigger ---")
+    print("Every workflow must start with an event trigger.")
+    
+    available_events = EventFactory.get_available_events()
+    if not available_events:
+        print("No event triggers available. Cannot create workflow.")
+        return
+    
+    event_names = list(available_events.keys())
+    display_choices("Available Event Triggers", [
+        f"{name} - {info['doc']}" for name, info in available_events.items()
+    ])
+    
+    choice_idx = get_choice(event_names, "Select event trigger")
+    selected_event = event_names[choice_idx]
+    
+    # Create component ID for trigger
+    trigger_id = "trigger_1"
+    
+    # Configure event trigger
+    trigger_config = configure_event_trigger(selected_event, trigger_id, user.user_id)
+    workflow_data['components'][trigger_id] = trigger_config
+    
+    print(f"Event trigger '{trigger_id}' added successfully!")
+    
+    # Now add action components
+    component_counter = 2
     while True:
-        print(f"\n--- Adding Component {component_counter} ---")
+        print(f"\n--- Adding Action Component {component_counter} ---")
         
-        # Show available components
         available_components = ComponentFactory.get_available_components()
         component_names = list(available_components.keys())
         
@@ -63,7 +89,7 @@ def create_workflow() -> None:
         print(f"Component '{component_id}' added successfully!")
         
         # Ask if user wants to add more components
-        if not ask_yes_no("Add another component?", False):
+        if not ask_yes_no("Add another action component?", False):
             break
         
         component_counter += 1
@@ -82,10 +108,46 @@ def create_workflow() -> None:
         print(f"Name: {workflow_name}")
         print(f"Components: {len(workflow_data['components'])}")
         for comp_id, comp_config in workflow_data['components'].items():
-            print(f"  - {comp_id}: {comp_config.get('action_type', 'Unknown')}")
+            component_type = comp_config.get('action_type') or comp_config.get('event_type', 'Unknown')
+            print(f"  - {comp_id}: {component_type}")
         
     except Exception as e:
         print(f"Error saving workflow: {e}")
+
+
+def configure_event_trigger(event_name: str, component_id: str, user_id: str) -> Dict[str, Any]:
+    """Configure an event trigger."""
+    print(f"\nConfiguring {event_name} event trigger...")
+    
+    # Get event info
+    available_events = EventFactory.get_available_events()
+    event_info = available_events.get(event_name, {})
+    
+    # Get component name from event
+    component_name = event_info.get('component', '')
+    
+    # Check if component needs setup
+    components_store = ComponentFactory.get_available_components()
+    component_info = components_store.get(component_name, {})
+    
+    setup_name = None
+    if component_info.get('type') == 'third_party':
+        setup_name = setup_component_if_needed(component_name, component_info, user_id)
+    
+    # Configure event
+    config = configure_action(event_name, event_info)  # Reuse action configuration logic
+    
+    # Get output keys
+    output_mapping = get_output_keys(event_info, component_id)
+    
+    return {
+        'component': component_name,
+        'setup_name': setup_name,
+        'event_type': event_name,
+        'config': config,
+        'output_mapping': output_mapping,
+        'is_trigger': True
+    }
 
 
 def configure_component(component_name: str, component_id: str, user_id: str) -> Dict[str, Any]:
@@ -96,8 +158,9 @@ def configure_component(component_name: str, component_id: str, user_id: str) ->
     components_store = ComponentFactory.get_available_components()
     component_info = components_store.get(component_name, {})
     
+    setup_name = None
     if component_info.get('type') == 'third_party':
-        setup_component_if_needed(component_name, component_info, user_id)
+        setup_name = setup_component_if_needed(component_name, component_info, user_id)
     
     # Get available actions for this component
     available_actions = ActionFactory.get_actions_for_component(component_name)
@@ -106,8 +169,9 @@ def configure_component(component_name: str, component_id: str, user_id: str) ->
         print(f"No actions available for component {component_name}")
         return {
             'component': component_name,
+            'setup_name': setup_name,
             'config': {},
-            'output_keys': []
+            'output_mapping': {}
         }
     
     # Select action
@@ -124,24 +188,46 @@ def configure_component(component_name: str, component_id: str, user_id: str) ->
     config = configure_action(selected_action, action_info)
     
     # Get output keys
-    output_keys = get_output_keys(action_info, component_id)
+    output_mapping = get_output_keys(action_info, component_id)
     
     return {
         'component': component_name,
+        'setup_name': setup_name,
         'action_type': selected_action,
         'config': config,
-        'output_keys': output_keys
+        'output_mapping': output_mapping
     }
 
 
-def setup_component_if_needed(component_name: str, component_info: Dict[str, Any], user_id: str) -> None:
-    """Setup a third-party component if not already configured."""
-    if datastore.has_component_setup(user_id, component_name):
-        print(f"{component_name} is already configured.")
-        if not ask_yes_no("Reconfigure?", False):
-            return
+def setup_component_if_needed(component_name: str, component_info: Dict[str, Any], user_id: str) -> str:
+    """Setup a third-party component if not already configured. Returns the setup name used."""
+    existing_setups = datastore.list_component_setups(user_id, component_name)
     
-    print(f"\nSetting up {component_name} component...")
+    if existing_setups:
+        print(f"\nExisting {component_name} configurations:")
+        display_choices("Available Setups", existing_setups)
+        
+        choices = existing_setups + ["Create new setup"]
+        display_choices("Options", choices)
+        
+        choice_idx = get_choice(choices, "Select an option")
+        
+        if choice_idx < len(existing_setups):
+            # Use existing setup
+            selected_setup = existing_setups[choice_idx]
+            print(f"Using existing setup: {selected_setup}")
+            return selected_setup
+        else:
+            # Create new setup
+            setup_name = ask_question("Enter name for new setup", "default")
+            while setup_name in existing_setups:
+                print(f"Setup '{setup_name}' already exists.")
+                setup_name = ask_question("Enter a different name for new setup")
+    else:
+        # No existing setups, create first one
+        setup_name = ask_question("Enter name for this setup", "default")
+    
+    print(f"\nSetting up {component_name} component ('{setup_name}')...")
     setup_config = component_info.get('setup', {})
     
     setup_data = {}
@@ -150,8 +236,9 @@ def setup_component_if_needed(component_name: str, component_info: Dict[str, Any
         setup_data[field_key] = value
     
     # Save setup
-    datastore.save_component_setup(user_id, component_name, setup_data)
-    print(f"{component_name} setup completed!")
+    datastore.save_component_setup(user_id, component_name, setup_data, setup_name)
+    print(f"{component_name} setup '{setup_name}' completed!")
+    return setup_name
 
 
 def configure_action(action_name: str, action_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -188,21 +275,24 @@ def configure_action(action_name: str, action_info: Dict[str, Any]) -> Dict[str,
     return config
 
 
-def get_output_keys(action_info: Dict[str, Any], component_id: str) -> List[str]:
-    """Get output keys for an action."""
+def get_output_keys(action_info: Dict[str, Any], component_id: str) -> Dict[str, str]:
+    """Get output keys for an action with custom aliases."""
     output_schema = action_info.get('output_schema', {})
     
     if not output_schema:
-        return []
+        return {}
     
     print(f"\nThis action will output the following keys:")
     for key in output_schema.keys():
         print(f"  - {key}")
     
-    # Ask user which keys they want to make available to other components
-    selected_keys = []
+    # Ask user which keys they want to make available and get custom aliases
+    output_mapping = {}
     for key in output_schema.keys():
         if ask_yes_no(f"Make '{key}' available to other components?", True):
-            selected_keys.append(key)
+            custom_key = ask_question(f"Enter custom alias for '{key}' (or press Enter to use '{key}')", key)
+            if not custom_key:
+                custom_key = key
+            output_mapping[key] = custom_key
     
-    return selected_keys
+    return output_mapping

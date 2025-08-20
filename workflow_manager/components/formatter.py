@@ -2,6 +2,7 @@
 
 import urllib.parse
 import random
+import logging
 from typing import Dict, Any
 
 from ..core.component import BaseComponent, BaseAction
@@ -11,6 +12,10 @@ from ..core.context import WorkflowContext
 class Formatter(BaseComponent):
     """Component for text and number formatting operations."""
     
+    def __init__(self, component_id: str, config: Dict[str, Any] = None):
+        super().__init__(component_id, config)
+        self.logger = logging.getLogger(__name__)
+    
     def setup(self, setup_config: Dict[str, Any]) -> None:
         """Formatter is a built-in component and doesn't require setup."""
         pass
@@ -18,6 +23,10 @@ class Formatter(BaseComponent):
 
 class TextAction(BaseAction):
     """Action for text formatting operations."""
+    
+    def __init__(self, component: BaseComponent, config: Dict[str, Any] = None):
+        super().__init__(component, config)
+        self.logger = logging.getLogger(__name__)
     
     def execute(self, context: WorkflowContext) -> Dict[str, Any]:
         """Execute text formatting operation."""
@@ -38,7 +47,9 @@ class TextAction(BaseAction):
                 result = input_text
         else:
             raise ValueError(f"Unknown text operation: {operation}")
-        
+
+        self.logger.info(f"Formatted text '{input_text}' to '{result}' using operation '{operation}'")
+        print(f"🔧 Formatter: '{input_text}' → '{result}' (operation: {operation})", flush=True)  # Force immediate output
         return {
             'formatted_text': result,
             'success': True
@@ -47,6 +58,10 @@ class TextAction(BaseAction):
 
 class NumberAction(BaseAction):
     """Action for number formatting operations."""
+    
+    def __init__(self, component: BaseComponent, config: Dict[str, Any] = None):
+        super().__init__(component, config)
+        self.logger = logging.getLogger(__name__)
     
     def execute(self, context: WorkflowContext) -> Dict[str, Any]:
         """Execute number formatting operation."""

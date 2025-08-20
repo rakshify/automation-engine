@@ -2,10 +2,28 @@
 
 import json
 import requests
-from typing import Dict, Any
+import threading
+import time
+import logging
+from typing import Dict, Any, Optional, Callable
+from queue import Queue, Empty
 
 from ..core.component import BaseComponent, BaseAction, BaseEvent
 from ..core.context import WorkflowContext
+
+try:
+    from slack_sdk import WebClient
+    from slack_sdk.socket_mode import SocketModeClient
+    from slack_sdk.socket_mode.request import SocketModeRequest
+    from slack_sdk.socket_mode.response import SocketModeResponse
+    SLACK_SDK_AVAILABLE = True
+except ImportError:
+    # Create dummy classes for type hints when SDK is not available
+    class WebClient: pass
+    class SocketModeClient: pass
+    class SocketModeRequest: pass
+    class SocketModeResponse: pass
+    SLACK_SDK_AVAILABLE = False
 
 
 class Slack(BaseComponent):
@@ -14,15 +32,42 @@ class Slack(BaseComponent):
     def __init__(self, name: str, config: Dict[str, Any] = None):
         super().__init__(name, config)
         self.bot_token = None
-        self.default_channel = None
+        self.signing_secret = None
+        self.app_token = None
+        self.web_client = None
+        self.socket_client = None
+        self.logger = logging.getLogger(__name__)
     
     def setup(self, setup_config: Dict[str, Any]) -> None:
-        """Setup Slack component with bot token and default channel."""
+        """Setup Slack component with bot token, signing secret, and app token."""
+        if not SLACK_SDK_AVAILABLE:
+            raise ValueError("Slack SDK not available. Install with: pip install slack-sdk slack-bolt")
+        
         self.bot_token = setup_config.get('bot_token')
-        self.default_channel = setup_config.get('channel')
+        self.signing_secret = setup_config.get('signing_secret')
+        self.app_token = setup_config.get('app_token')
         
         if not self.bot_token:
             raise ValueError("Slack bot token is required for setup")
+        if not self.app_token:
+            raise ValueError("Slack app token is required for Socket Mode")
+        
+        # Initialize Slack clients
+        self.web_client = WebClient(token=self.bot_token)
+        self.socket_client = SocketModeClient(
+            app_token=self.app_token,
+            web_client=self.web_client
+        )
+        
+        # Test the connection
+        try:
+            auth_response = self.web_client.auth_test()
+            if not auth_response["ok"]:
+                raise ValueError(f"Slack authentication failed: {auth_response.get('error', 'Unknown error')}")
+            
+            self.logger.info(f"Slack setup successful for bot: {auth_response['user']}")
+        except Exception as e:
+            raise ValueError(f"Failed to authenticate with Slack: {str(e)}")
 
 
 class SendMessageAction(BaseAction):
@@ -30,39 +75,28 @@ class SendMessageAction(BaseAction):
     
     def execute(self, context: WorkflowContext) -> Dict[str, Any]:
         """Send a message to Slack."""
-        if not self.component.bot_token:
+        if not self.component.web_client:
             raise ValueError("Slack component not properly configured")
         
         message = self.config.get('message', '')
-        channel = self.config.get('channel', self.component.default_channel)
+        channel = self.config.get('channel')
         
         if not message:
             raise ValueError("Message is required")
         
         if not channel:
-            raise ValueError("Channel is required (either in config or component setup)")
-        
-        # Slack API endpoint
-        url = "https://slack.com/api/chat.postMessage"
-        
-        headers = {
-            'Authorization': f'Bearer {self.component.bot_token}',
-            'Content-Type': 'application/json'
-        }
-        
-        payload = {
-            'channel': channel,
-            'text': message
-        }
+            raise ValueError("Channel is required in action configuration")
         
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            response_data = response.json()
+            response = self.component.web_client.chat_postMessage(
+                channel=channel,
+                text=message
+            )
             
-            if response_data.get('ok'):
+            if response["ok"]:
                 return {
-                    'message_ts': response_data.get('ts', ''),
-                    'channel': response_data.get('channel', channel),
+                    'message_ts': response.get('ts', ''),
+                    'channel': response.get('channel', channel),
                     'success': True
                 }
             else:
@@ -70,10 +104,10 @@ class SendMessageAction(BaseAction):
                     'message_ts': '',
                     'channel': channel,
                     'success': False,
-                    'error': response_data.get('error', 'Unknown error')
+                    'error': response.get('error', 'Unknown error')
                 }
                 
-        except requests.RequestException as e:
+        except Exception as e:
             return {
                 'message_ts': '',
                 'channel': channel,
@@ -83,22 +117,182 @@ class SendMessageAction(BaseAction):
 
 
 class ReceiveMessageEvent(BaseEvent):
-    """Event for receiving messages from Slack."""
+    """Event for receiving messages from Slack using Socket Mode."""
+    
+    def __init__(self, component: BaseComponent, config: Dict[str, Any] = None):
+        super().__init__(component, config)
+        self.message_queue = Queue()
+        self.is_listening = False
+        self.listener_thread = None
+        self.logger = logging.getLogger(__name__)
+        self.stop_event = threading.Event()
+        self.workflow_callback = None  # Callback for reactive workflow execution
+    
+    def set_workflow_callback(self, callback: Callable[[Dict[str, Any]], None]):
+        """Set callback function to execute when message is received."""
+        self.workflow_callback = callback
+    
+    def _handle_message(self, client: SocketModeClient, req: SocketModeRequest) -> None:
+        """Handle incoming Slack messages."""
+        if req.type == "events_api":
+            # Acknowledge the request
+            response = SocketModeResponse(envelope_id=req.envelope_id)
+            client.send_socket_mode_response(response)
+            
+            # Process the event
+            event = req.payload.get("event", {})
+            if event.get("type") == "message" and event.get("subtype") is None:
+                # Filter by channel if specified
+                target_channel = self.config.get('channel')
+                event_channel = event.get('channel')
+                
+                if target_channel and event_channel != target_channel:
+                    return
+                
+                # Filter by keyword if specified
+                keyword = self.config.get('keyword')
+                message_text = event.get('text', '')
+                
+                if keyword and keyword.lower() not in message_text.lower():
+                    return
+                
+                # Don't process bot messages
+                if event.get('bot_id'):
+                    return
+                
+                # Create message data
+                message_data = {
+                    'message_text': message_text,
+                    'user_id': event.get('user', ''),
+                    'channel': event_channel,
+                    'timestamp': event.get('ts', ''),
+                    'success': True
+                }
+                
+                # Queue the message for traditional workflow
+                self.message_queue.put(message_data)
+                self.logger.info(f"Received message from {event.get('user')} in {event_channel}: {message_text[:50]}...")
+                
+                # Execute workflow callback for reactive workflow
+                if self.workflow_callback:
+                    self.logger.info(f"🔥 Executing workflow callback for reactive execution...")
+                    try:
+                        self.workflow_callback(message_data)
+                        self.logger.info(f"✅ Workflow callback executed successfully")
+                    except Exception as e:
+                        self.logger.error(f"❌ Error in workflow callback: {str(e)}")
+                        import traceback
+                        self.logger.error(traceback.format_exc())
+                else:
+                    self.logger.warning(f"⚠️  No workflow callback set - message queued only")
+    
+    def _start_listening(self) -> None:
+        """Start listening for Slack messages in a separate thread."""
+        if not self.component.socket_client:
+            raise ValueError("Slack Socket Mode client not initialized")
+        
+        # Register message handler
+        self.component.socket_client.socket_mode_request_listeners.append(self._handle_message)
+        
+        try:
+            # Start the Socket Mode client
+            self.component.socket_client.connect()
+            self.is_listening = True
+            self.logger.info("Started persistent Slack message listener")
+            
+            # Keep the connection alive until stopped
+            while self.is_listening and not self.stop_event.is_set():
+                time.sleep(1)
+                
+        except Exception as e:
+            self.logger.error(f"Error in Slack listener: {str(e)}")
+            self.is_listening = False
+        finally:
+            try:
+                self.component.socket_client.disconnect()
+                self.logger.info("Disconnected from Slack")
+            except:
+                pass
     
     def execute(self, context: WorkflowContext) -> Dict[str, Any]:
-        """Simulate receiving a message from Slack."""
-        # In a real implementation, this would set up a webhook or polling mechanism
-        # For now, we'll return a mock event
-        
-        channel = self.config.get('channel', self.component.default_channel)
+        """Start listening for Slack messages. By default, runs persistently until stopped."""
+        channel = self.config.get('channel')
         keyword = self.config.get('keyword')
+        timeout = self.config.get('timeout', -1)  # Default to persistent listening
         
-        # Mock event data
-        return {
-            'message_text': f'Mock message containing {keyword}' if keyword else 'Mock message',
-            'user_id': 'U1234567890',
-            'channel': channel or '#general',
-            'timestamp': '1234567890.123456',
-            'success': True,
-            'note': 'This is a mock event. In production, this would listen for real Slack events.'
-        }
+        if not channel:
+            raise ValueError("Channel is required in event configuration")
+        
+        if not self.component.socket_client:
+            raise ValueError("Slack component not properly configured for Socket Mode")
+        
+        self.logger.info(f"Starting Slack listener for channel {channel}" + 
+                        (f" with keyword '{keyword}'" if keyword else "") +
+                        (" (persistent)" if timeout == -1 else f" (timeout: {timeout}s)"))
+        
+        # Start listening in a separate thread if not already listening
+        if not self.is_listening:
+            self.stop_event.clear()
+            self.listener_thread = threading.Thread(target=self._start_listening, daemon=True)
+            self.listener_thread.start()
+            
+            # Give the listener a moment to start
+            time.sleep(2)
+        
+        # Handle different timeout scenarios
+        if timeout == -1:
+            # Persistent listening - wait for first message but keep listener running
+            self.logger.info("Persistent listener started. Waiting for first message...")
+            try:
+                message_data = self.message_queue.get(timeout=None)  # Wait indefinitely for first message
+                self.logger.info("First message received, listener continues running in background")
+                return message_data
+            except Exception as e:
+                return {
+                    'message_text': '',
+                    'user_id': '',
+                    'channel': channel,
+                    'timestamp': '',
+                    'success': False,
+                    'error': str(e)
+                }
+        else:
+            # Timeout-based listening (for testing or specific use cases)
+            self.logger.info(f"Waiting for message with {timeout} second timeout...")
+            try:
+                message_data = self.message_queue.get(timeout=timeout)
+                self.logger.info(f"Message received within timeout: {message_data.get('message_text', '')[:50]}...")
+                return message_data
+            except Empty:
+                return {
+                    'message_text': '',
+                    'user_id': '',
+                    'channel': channel,
+                    'timestamp': '',
+                    'success': False,
+                    'error': f'No matching message received within {timeout} seconds'
+                }
+            except Exception as e:
+                return {
+                    'message_text': '',
+                    'user_id': '',
+                    'channel': channel,
+                    'timestamp': '',
+                    'success': False,
+                    'error': str(e)
+                }
+    
+    def stop_listening(self) -> None:
+        """Stop the persistent listener."""
+        self.logger.info("Stopping Slack message listener...")
+        self.is_listening = False
+        self.stop_event.set()
+        
+        if self.listener_thread and self.listener_thread.is_alive():
+            self.listener_thread.join(timeout=5)
+        
+        self.logger.info("Slack message listener stopped")
+    
+    def is_running(self) -> bool:
+        """Check if the listener is currently running."""
+        return self.is_listening and (self.listener_thread and self.listener_thread.is_alive())
