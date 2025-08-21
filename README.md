@@ -94,9 +94,7 @@ To use Slack integration, you need to create a Slack app with the following:
 2. **Configure Bot Scopes** (OAuth & Permissions):
    - `chat:write` - Send messages
    - `channels:read` - Read public channel info
-   - `groups:read` - Read private channel info
-   - `im:read` - Read direct message info
-   - `mpim:read` - Read group direct message info
+   - `groups:read` - Read private channel info (optional)
 
 3. **Install App to Workspace**:
    - Install the app to your workspace
@@ -129,7 +127,7 @@ Component: Slack
 Action: Send Slack Message
 Configuration:
 - Message: "Hello from Workflow Manager!" (supports context placeholders)
-- Channel: "#general" or "C1234567890"
+- Channel: Selected from available channels or context placeholder
 ```
 
 #### Receive Message Event (Persistent Listener)
@@ -137,7 +135,7 @@ Configuration:
 Component: Slack
 Event: Receive Slack Message
 Configuration:
-- Channel: "#general" or "C1234567890"
+- Channel: Selected from available channels or context placeholder
 - Keyword: "deploy" (optional - triggers on all messages if not specified)
 - Timeout: -1 (default - persistent listening, or specify seconds for timeout)
 ```

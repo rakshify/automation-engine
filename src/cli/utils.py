@@ -113,6 +113,56 @@ def format_dict(data: Dict[Any, Any], indent: int = 0) -> str:
     return "\n".join(lines)
 
 
+def select_slack_channel(slack_component) -> str:
+    """Select a Slack channel from available channels or use context placeholder."""
+    try:
+        print("\nFetching available Slack channels...")
+        channels = slack_component.get_channels()
+        
+        if not channels:
+            print("No channels found or unable to fetch channels.")
+            return ask_question("Enter channel ID or name manually")
+        
+        # Prepare choices
+        channel_choices = []
+        channel_map = {}
+        
+        # Add channels
+        for i, channel in enumerate(channels):
+            choice_text = channel['name']
+            channel_choices.append(choice_text)
+            channel_map[i] = channel['id']
+        
+        # Add "From context" option
+        channel_choices.append("📝 From context (use placeholder)")
+        from_context_index = len(channel_choices) - 1
+        
+        # Add manual entry option
+        channel_choices.append("✏️ Enter manually")
+        manual_entry_index = len(channel_choices) - 1
+        
+        # Display choices
+        display_choices("Select Slack Channel", channel_choices)
+        
+        # Get user choice
+        choice_idx = get_choice(channel_choices, "Select channel option")
+        
+        if choice_idx == from_context_index:
+            # User wants to use context placeholder
+            placeholder = ask_question("Enter context placeholder (e.g., channel_name, target_channel)")
+            return f"{{{{{placeholder}}}}}"
+        elif choice_idx == manual_entry_index:
+            # User wants to enter manually
+            return ask_question("Enter channel ID or name")
+        else:
+            # User selected a channel
+            return channel_map[choice_idx]
+            
+    except Exception as e:
+        print(f"Error fetching channels: {e}")
+        return ask_question("Enter channel ID or name manually")
+
+
 def print_separator(char: str = "-", length: int = 50) -> None:
     """Print a separator line."""
     print(char * length)

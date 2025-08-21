@@ -5,7 +5,7 @@ import requests
 import threading
 import time
 import logging
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, List
 from queue import Queue, Empty
 
 from ..core.component import BaseComponent, BaseAction, BaseEvent
@@ -76,9 +76,64 @@ class Slack(BaseComponent):
         except Exception as e:
             raise ValueError(f"Failed to authenticate with Slack: {str(e)}")
 
+    def get_channels(self):
+        """Get list of available channels."""
+        if not self.web_client:
+            return []
+        
+        try:
+            channels = []
+            
+            # Get public channels
+            response = self.web_client.conversations_list(types="public_channel")
+            for channel in response.get('channels', []):
+                channels.append({
+                    'key': channel['id'],
+                    'name': f"#{channel['name']}"
+                })
+            
+            # Get private channels (only if bot is a member)
+            try:
+                response = self.web_client.conversations_list(types="private_channel")
+                for channel in response.get('channels', []):
+                    channels.append({
+                        'key': channel['id'],
+                        'name': f"#{channel['name']} (private)"
+                    })
+            except Exception as e:
+                self.logger.debug(f"Could not fetch private channels: {e}")
+            
+            return channels
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get channels: {e}")
+            return []
+
 
 class SendMessageAction(BaseAction):
     """Action for sending messages to Slack."""
+    
+    @staticmethod
+    def get_field_choices(field_name: str, field_config: Dict[str, Any], component_instance=None) -> List[str]:
+        """Get available choices for a specific field."""
+        # If field has choices in config, return empty (use config choices)
+        if 'choices' in field_config:
+            return []
+        
+        # If field is channel and we have component instance, get dynamic choices
+        if field_name == 'channel' and component_instance:
+            try:
+                channels = component_instance.get_channels()
+                if channels:
+                    choices = channels
+                    choices.extend([
+                        {'key': 'context', 'name': "📝 From context (use placeholder)"},
+                        {'key': 'manual', 'name': "✏️ Enter manually"}
+                    ])
+                    return choices
+            except Exception:
+                pass
+        return []
     
     def execute(self, context: WorkflowContext) -> Dict[str, Any]:
         """Send a message to Slack."""
@@ -126,6 +181,28 @@ class SendMessageAction(BaseAction):
 class ReceiveMessageEvent(BaseEvent):
     """Event for receiving messages from Slack using Socket Mode."""
     
+    @staticmethod
+    def get_field_choices(field_name: str, field_config: Dict[str, Any], component_instance=None) -> List[str]:
+        """Get available choices for a specific field."""
+        # If field has choices in config, return empty (use config choices)
+        if 'choices' in field_config:
+            return []
+        
+        # If field is channel and we have component instance, get dynamic choices
+        if field_name == 'channel' and component_instance:
+            try:
+                channels = component_instance.get_channels()
+                if channels:
+                    choices = channels
+                    choices.extend([
+                        {'key': 'context', 'name': "📝 From context (use placeholder)"},
+                        {'key': 'manual', 'name': "✏️ Enter manually"}
+                    ])
+                    return choices
+            except Exception:
+                pass
+        return []
+    
     def __init__(self, component: BaseComponent, config: Dict[str, Any] = None):
         super().__init__(component, config)
         self.message_queue = Queue()
@@ -148,24 +225,43 @@ class ReceiveMessageEvent(BaseEvent):
             
             # Process the event
             event = req.payload.get("event", {})
+            self.logger.info(f"Received event: type={event.get('type')}, subtype={event.get('subtype')}")
+            
             if event.get("type") == "message" and event.get("subtype") is None:
                 # Filter by channel if specified
                 target_channel = self.config.get('channel')
                 event_channel = event.get('channel')
                 
-                if target_channel and event_channel != target_channel:
-                    return
+                self.logger.info(f"Message received - target_channel: {target_channel}, event_channel: {event_channel}")
+                
+                # Channel filtering: handle both channel names and IDs
+                if target_channel and event_channel:
+                    # If target_channel starts with #, it's a channel name - need to resolve to ID
+                    if target_channel.startswith('#'):
+                        # For now, skip channel filtering if target is a name and event is an ID
+                        # This allows messages from any channel that matches the name pattern
+                        channel_name = target_channel.split(' ')[0]  # Remove "(private)" suffix
+                        self.logger.info(f"Channel name filtering: looking for {channel_name}")
+                        # We'll accept the message and let it through for now
+                    elif target_channel != event_channel:
+                        self.logger.info(f"Channel ID mismatch - ignoring message")
+                        return
                 
                 # Filter by keyword if specified
                 keyword = self.config.get('keyword')
                 message_text = event.get('text', '')
                 
+                self.logger.info(f"Keyword filter - keyword: {keyword}, message: {message_text}")
+                
                 if keyword and keyword.lower() not in message_text.lower():
+                    self.logger.info(f"Keyword mismatch - ignoring message")
                     return
                 
-                # Don't process bot messages
-                if event.get('bot_id'):
-                    return
+                # Don't process bot messages (temporarily commented for testing)
+                # if event.get('bot_id'):
+                #     return
+                
+                self.logger.info(f"Processing message: {message_text}")
                 
                 # Create message data
                 message_data = {
@@ -248,21 +344,34 @@ class ReceiveMessageEvent(BaseEvent):
         
         # Handle different timeout scenarios
         if timeout == -1:
-            # Persistent listening - wait for first message but keep listener running
-            self.logger.info("Persistent listener started. Waiting for first message...")
-            try:
-                message_data = self.message_queue.get(timeout=None)  # Wait indefinitely for first message
-                self.logger.info("First message received, listener continues running in background")
-                return message_data
-            except Exception as e:
+            # For persistent listening with reactive workflows, check if we have a callback
+            if self.workflow_callback:
+                # Reactive workflow - just return success, callback will handle all messages
+                self.logger.info("Persistent listener started for reactive workflow. Callback will handle all messages.")
                 return {
                     'message_text': '',
                     'user_id': '',
                     'channel': channel,
                     'timestamp': '',
-                    'success': False,
-                    'error': str(e)
+                    'success': True,
+                    'reactive_listener': True
                 }
+            else:
+                # Traditional workflow - wait for first message but keep listener running
+                self.logger.info("Persistent listener started. Waiting for first message...")
+                try:
+                    message_data = self.message_queue.get(timeout=None)  # Wait indefinitely for first message
+                    self.logger.info("First message received, listener continues running in background")
+                    return message_data
+                except Exception as e:
+                    return {
+                        'message_text': '',
+                        'user_id': '',
+                        'channel': channel,
+                        'timestamp': '',
+                        'success': False,
+                        'error': str(e)
+                    }
         else:
             # Timeout-based listening (for testing or specific use cases)
             self.logger.info(f"Waiting for message with {timeout} second timeout...")

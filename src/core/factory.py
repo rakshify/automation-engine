@@ -37,6 +37,12 @@ class ComponentFactory:
         
         with open(config_path, 'r') as f:
             return json.load(f)
+    
+    @classmethod
+    def get_component_info(cls, component_name: str) -> Dict[str, Any]:
+        """Get component information by name."""
+        components = cls.get_available_components()
+        return components.get(component_name, {})
 
 
 class ActionFactory:
@@ -58,6 +64,16 @@ class ActionFactory:
         
         action_class = cls._actions[action_name]
         return action_class(component, config)
+    
+    @classmethod
+    def get_action_class(cls, action_name: str):
+        """Get the action class for a given action name."""
+        return cls._actions.get(action_name)
+    
+    @classmethod
+    def get_action_class(cls, action_name: str):
+        """Get the action class for a given action name."""
+        return cls._actions.get(action_name)
     
     @classmethod
     def get_available_actions(cls) -> Dict[str, Any]:
@@ -99,6 +115,16 @@ class EventFactory:
         return event_class(component, config)
     
     @classmethod
+    def get_event_class(cls, event_name: str):
+        """Get the event class for a given event name."""
+        return cls._events.get(event_name)
+    
+    @classmethod
+    def get_event_class(cls, event_name: str):
+        """Get the event class for a given event name."""
+        return cls._events.get(event_name)
+    
+    @classmethod
     def get_available_events(cls) -> Dict[str, Any]:
         """Get available events from the event store."""
         config_path = Path("configs/event_store.json")
@@ -107,3 +133,9 @@ class EventFactory:
         
         with open(config_path, 'r') as f:
             return json.load(f)
+    
+    @classmethod
+    def get_event_info(cls, event_name: str) -> Dict[str, Any]:
+        """Get event information by name."""
+        events = cls.get_available_events()
+        return events.get(event_name, {})
