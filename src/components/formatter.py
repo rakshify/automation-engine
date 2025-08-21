@@ -3,7 +3,7 @@
 import urllib.parse
 import random
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from ..core.component import BaseComponent, BaseAction
 from ..core.context import WorkflowContext
@@ -23,6 +23,11 @@ class Formatter(BaseComponent):
 
 class TextAction(BaseAction):
     """Action for text formatting operations."""
+    
+    @staticmethod
+    def get_field_choices(field_name: str, field_config: Dict[str, Any], component_instance=None) -> List[str]:
+        """Get available choices for a specific field."""
+        return field_config.get('choices', [])
     
     def __init__(self, component: BaseComponent, config: Dict[str, Any] = None):
         super().__init__(component, config)
@@ -57,6 +62,11 @@ class TextAction(BaseAction):
 
 class NumberAction(BaseAction):
     """Action for number formatting operations."""
+    
+    @staticmethod
+    def get_field_choices(field_name: str, field_config: Dict[str, Any], component_instance=None) -> List[str]:
+        """Get available choices for a specific field."""
+        return field_config.get('choices', [])
     
     def __init__(self, component: BaseComponent, config: Dict[str, Any] = None):
         super().__init__(component, config)

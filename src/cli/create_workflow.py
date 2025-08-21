@@ -13,6 +13,8 @@ from ..core.datastore import datastore
 from ..core.factory import ComponentFactory, ActionFactory, EventFactory
 from ..core.logging_filter import set_logging_context
 
+logger = logging.getLogger(__name__)
+
 # Module-level logger
 logger = logging.getLogger(__name__)
 
@@ -119,15 +121,48 @@ def configure_event_trigger(event_name: str, component_id: str, user_id: str) ->
     component_info = ComponentFactory.get_component_info(component_name)
     setup_name = None
     
-    if component_info and component_info.get('requires_setup', False):
+    if component_info and component_info.get('type') == 'third_party':
         setup_name = handle_component_setup(component_name, component_info, user_id)
+    
+    # Create component instance for special configuration (like Slack channel selection)
+    component_instance = None
+    if setup_name:
+        try:
+            from ..core.datastore import datastore
+            setup_data = datastore.load_component_setup(user_id, component_name, setup_name)
+            if setup_data:
+                component_instance = ComponentFactory.create(component_name, component_id)
+                component_instance.setup(setup_data)
+        except Exception as e:
+            logger.warning(f"Could not create component instance for channel selection: {e}")
     
     # Configure event parameters
     config = {}
     event_config = event_info.get('config', {})
     
     for param_key, param_info in event_config.items():
-        value = ask_question(f"{param_info['name']} ({param_info['doc']})", param_info.get('default', ''))
+        event_class = EventFactory.get_event_class(event_name)
+        field_choices = event_class.get_field_choices(param_key, param_info, component_instance)
+        
+        if field_choices:
+            from .utils import display_choices, get_choice
+            if isinstance(field_choices[0], dict):
+                display_choices(f"Available {param_info['name']} options", [c['name'] for c in field_choices])
+                choice_idx = get_choice([c['name'] for c in field_choices], f"Select {param_info['name'].lower()}")
+                selected_option = field_choices[choice_idx]
+                
+                if selected_option['key'] == 'manual':
+                    value = ask_question(f"Enter {param_info['name']} manually")
+                elif selected_option['key'] == 'context':
+                    value = ask_question("Enter context placeholder", "{{ some_variable }}")
+                else:
+                    value = selected_option['key']
+            else:
+                display_choices(f"Available {param_info['name']} options", field_choices)
+                choice_idx = get_choice(field_choices, f"Select {param_info['name'].lower()}")
+                value = field_choices[choice_idx]
+        else:
+            value = ask_question(f"{param_info['name']} ({param_info['doc']})", param_info.get('default', ''))
         config[param_key] = value
     
     # Get output mapping
@@ -148,7 +183,7 @@ def configure_component(component_name: str, component_id: str, user_id: str) ->
     component_info = ComponentFactory.get_component_info(component_name)
     setup_name = None
     
-    if component_info and component_info.get('requires_setup', False):
+    if component_info and component_info.get('type') == 'third_party':
         setup_name = handle_component_setup(component_name, component_info, user_id)
     
     # Get available actions for this component
@@ -170,9 +205,21 @@ def configure_component(component_name: str, component_id: str, user_id: str) ->
     action_choice = get_choice(action_names, "Select an action")
     selected_action = action_names[action_choice]
     
+    # Create component instance for special configuration (like Slack channel selection)
+    component_instance = None
+    if setup_name:
+        try:
+            from ..core.datastore import datastore
+            setup_data = datastore.load_component_setup(user_id, component_name, setup_name)
+            if setup_data:
+                component_instance = ComponentFactory.create(component_name, component_id)
+                component_instance.setup(setup_data)
+        except Exception as e:
+            logger.warning(f"Could not create component instance for channel selection: {e}")
+    
     # Configure the action
     action_info = available_actions[selected_action]
-    action_config = configure_action(selected_action, action_info)
+    action_config = configure_action(selected_action, action_info, component_instance)
     
     # Get output mapping
     output_mapping = configure_output_mapping(action_info.get('output_schema', {}))
@@ -225,19 +272,40 @@ def handle_component_setup(component_name: str, component_info: Dict[str, Any], 
     return setup_name
 
 
-def configure_action(action_name: str, action_info: Dict[str, Any]) -> Dict[str, Any]:
+def configure_action(action_name: str, action_info: Dict[str, Any], component_instance=None) -> Dict[str, Any]:
     """Configure an action with its parameters."""
     config = {}
     action_config = action_info.get('config', {})
     
     # Configure basic parameters
     for param_key, param_info in action_config.items():
-        if param_key != 'conditional':  # Skip conditional config for now
-            value = ask_question(f"{param_info['name']} ({param_info['doc']})", param_info.get('default', ''))
+        if param_key != 'conditional_config':  # Skip conditional config for now
+            action_class = ActionFactory.get_action_class(action_name)
+            field_choices = action_class.get_field_choices(param_key, param_info, component_instance)
+            
+            if field_choices:
+                from .utils import display_choices, get_choice
+                if isinstance(field_choices[0], dict):
+                    display_choices(f"Available {param_info['name']} options", [c['name'] for c in field_choices])
+                    choice_idx = get_choice([c['name'] for c in field_choices], f"Select {param_info['name'].lower()}")
+                    selected_option = field_choices[choice_idx]
+
+                    if selected_option['key'] == 'manual':
+                        value = ask_question(f"Enter {param_info['name']} manually")
+                    elif selected_option['key'] == 'context':
+                        value = ask_question("Enter context placeholder", "{{ some_variable }}")
+                    else:
+                        value = selected_option['key']
+                else:
+                    display_choices(f"Available {param_info['name']} options", field_choices)
+                    choice_idx = get_choice(field_choices, f"Select {param_info['name'].lower()}")
+                    value = field_choices[choice_idx]
+            else:
+                value = ask_question(f"{param_info['name']} ({param_info['doc']})", param_info.get('default', ''))
             config[param_key] = value
     
     # Handle conditional configuration
-    conditional_config = action_config.get('conditional', {})
+    conditional_config = action_info.get('conditional_config', {})  # Get from action_info, not action_config
     if conditional_config:
         # Check if any condition is met and configure additional parameters
         for condition, fields in conditional_config.items():

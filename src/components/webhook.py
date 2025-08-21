@@ -2,7 +2,7 @@
 
 import json
 import requests
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from ..core.component import BaseComponent, BaseAction
 from ..core.context import WorkflowContext
@@ -18,6 +18,11 @@ class Webhook(BaseComponent):
 
 class GetAction(BaseAction):
     """Action for making HTTP GET requests."""
+    
+    @staticmethod
+    def get_field_choices(field_name: str, field_config: Dict[str, Any], component_instance=None) -> List[str]:
+        """Get available choices for a specific field."""
+        return field_config.get('choices', [])
     
     def execute(self, context: WorkflowContext) -> Dict[str, Any]:
         """Execute HTTP GET request."""
@@ -55,6 +60,11 @@ class GetAction(BaseAction):
 
 class PostAction(BaseAction):
     """Action for making HTTP POST requests."""
+    
+    @staticmethod
+    def get_field_choices(field_name: str, field_config: Dict[str, Any], component_instance=None) -> List[str]:
+        """Get available choices for a specific field."""
+        return field_config.get('choices', [])
     
     def execute(self, context: WorkflowContext) -> Dict[str, Any]:
         """Execute HTTP POST request."""

@@ -331,7 +331,7 @@ class Workflow:
             'action_components': action_components,
             'context': self.context.get_all()
         }
-    
+
     @classmethod
     def load_from_file(cls, user_id: str, workflow_name: str) -> Optional['Workflow']:
         """Load a workflow from file."""

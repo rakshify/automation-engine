@@ -7,7 +7,7 @@
       "channel": {
         "key": "channel",
         "name": "Channel",
-        "doc": "Slack channel to monitor (e.g., #general, C1234567890)",
+        "doc": "Slack channel to monitor (will show available channels to choose from)",
         "type": "text"
       },
       "keyword": {
